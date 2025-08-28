@@ -63,6 +63,37 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# EC2 assume-role trust policy
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    sid     = "EC2AssumeRole"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+# Role for the NAT instance to talk to SSM
+resource "aws_iam_role" "nat_ssm_role" {
+  name               = "${var.name}-nat-ssm-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
+# Attach the minimum managed policy for Session Manager, inventory, etc.
+resource "aws_iam_role_policy_attachment" "nat_ssm_core" {
+  role       = aws_iam_role.nat_ssm_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Instance profile to attach to the EC2 instance
+resource "aws_iam_instance_profile" "nat_ssm_profile" {
+  name = "${var.name}-nat-ssm-profile"
+  role = aws_iam_role.nat_ssm_role.name
+}
+
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -95,11 +126,23 @@ resource "aws_instance" "nat" {
   subnet_id              = aws_subnet.public[0].id
   source_dest_check      = false
   vpc_security_group_ids = [aws_security_group.nat.id]
+  iam_instance_profile   = aws_iam_instance_profile.nat_ssm_profile.name
+  user_data_replace_on_change = true
   depends_on             = [aws_internet_gateway.main]
   user_data              = <<-EOF
               #!/bin/bash
+              set -eu
+
+              # Enable IP forwarding + simple NAT
               echo 1 > /proc/sys/net/ipv4/ip_forward
-              iptables -t nat -A POSTROUTING -o $(ip -o -4 route show to default | awk '{print $5}') -j MASQUERADE
+              IFACE=$(ip -o -4 route show to default | awk '{print $5}')
+              iptables -t nat -A POSTROUTING -o "${IFACE}" -j MASQUERADE
+
+              # Ensure SSM agent is installed & running (Amazon Linux 2023)
+              if ! systemctl list-unit-files | grep -q amazon-ssm-agent; then
+                dnf install -y amazon-ssm-agent || yum install -y amazon-ssm-agent || true
+              fi
+              systemctl enable --now amazon-ssm-agent || true
               EOF
   tags = {
     Name = "${var.name}-nat-instance"
@@ -145,6 +188,59 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_id          = aws_vpc.main.id
   service_name    = "com.amazonaws.${var.aws_region}.s3"
   route_table_ids = [for rt in aws_route_table.private : rt.id]
+}
+
+# Security group for VPC endpoints (allow HTTPS from inside the VPC)
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${var.name}-vpce-sg"
+  description = "Allow HTTPS from VPC to interface endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Choose which subnets host the endpoints (typically private subnets)
+locals {
+  vpce_subnet_ids = length(aws_subnet.private) > 0 ? [for s in aws_subnet.private : s.id] : [for s in aws_subnet.public : s.id]
+}
+
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = local.vpce_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "ssmmessages" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ssmmessages"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = local.vpce_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
+}
+
+resource "aws_vpc_endpoint" "ec2messages" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ec2messages"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = local.vpce_subnet_ids
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  private_dns_enabled = true
 }
 
 resource "aws_security_group" "private" {
