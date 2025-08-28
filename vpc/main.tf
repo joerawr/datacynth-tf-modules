@@ -46,6 +46,9 @@ resource "aws_subnet" "public" {
   cidr_block              = cidrsubnet(aws_vpc.main.cidr_block, 8, count.index)
   availability_zone       = local.azs[count.index % var.az_count]
   map_public_ip_on_launch = true
+  tags = {
+    Name = "${var.name}-public"
+  }
 }
 
 resource "aws_route_table" "public" {
