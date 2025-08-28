@@ -94,6 +94,7 @@ resource "aws_instance" "nat" {
   subnet_id              = aws_subnet.public[0].id
   source_dest_check      = false
   vpc_security_group_ids = [aws_security_group.nat.id]
+  depends_on = [aws_internet_gateway.main]
   user_data = <<-EOF
               #!/bin/bash
               echo 1 > /proc/sys/net/ipv4/ip_forward
