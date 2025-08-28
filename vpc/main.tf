@@ -11,11 +11,6 @@ terraform {
 provider "aws" {
   profile = var.aws_profile
   region  = var.aws_region
-  default_tags {
-    tags = {
-      Name = var.name
-    }
-  }
 }
 
 data "aws_availability_zones" "available" {
@@ -34,6 +29,9 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames             = true
   enable_dns_support               = true
   assign_generated_ipv6_cidr_block = var.ipv6_enabled
+  tags = {
+    Name = var.name
+  }
 }
 
 resource "aws_internet_gateway" "main" {
