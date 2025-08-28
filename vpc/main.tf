@@ -94,8 +94,8 @@ resource "aws_instance" "nat" {
   subnet_id              = aws_subnet.public[0].id
   source_dest_check      = false
   vpc_security_group_ids = [aws_security_group.nat.id]
-  depends_on = [aws_internet_gateway.main]
-  user_data = <<-EOF
+  depends_on             = [aws_internet_gateway.main]
+  user_data              = <<-EOF
               #!/bin/bash
               echo 1 > /proc/sys/net/ipv4/ip_forward
               iptables -t nat -A POSTROUTING -o $(ip -o -4 route show to default | awk '{print $5}') -j MASQUERADE
@@ -116,6 +116,9 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = cidrsubnet(aws_vpc.main.cidr_block, 8, var.public_subnet_count + count.index)
   availability_zone = local.azs[count.index % var.az_count]
+  tags = {
+    Name = "${var.name}-private"
+  }
 }
 
 resource "aws_route_table" "private" {
