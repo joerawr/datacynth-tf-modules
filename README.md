@@ -21,15 +21,15 @@ This repo is structured to separate reusable modules from environment-specific i
 
 ```hcl
 module "vpc" {
-  source = "git::ssh://git@github.com/joerawr/datacynth-tf-modules.git//vpc?ref=v0.1.0"
+  source = "github.com/joerawr/datacynth-tf-modules//vpc?ref=main"
 
   name                 = "alpha-vpc"
   aws_profile          = "alpha-admin"
   aws_region           = "us-west-2"
   vpc_cidr             = "10.0.0.0/16"
-  az_count             = 2
-  public_subnet_count  = 2
-  private_subnet_count = 2
+  az_count             = 1
+  public_subnet_count  = 1
+  private_subnet_count = 1
 }
 ```
 
