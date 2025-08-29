@@ -152,7 +152,7 @@ resource "aws_instance" "nat" {
               iptables -F FORWARD
 
               # Add the masquerading rule
-              iptables -t nat -A POSTROUTING -o "${IFACE}" -j MASQUERADE
+              iptables -t nat -A POSTROUTING -o "$${IFACE}" -j MASQUERADE
 
               # Save the rules to persist across reboots
               service iptables save
