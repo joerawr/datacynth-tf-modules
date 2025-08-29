@@ -139,19 +139,24 @@ resource "aws_instance" "nat" {
               echo "Enabling IP forwarding..."
               echo 1 > /proc/sys/net/ipv4/ip_forward
 
-              echo "Configuring NAT using firewalld for Amazon Linux 2023..."
-              # Ensure firewalld is running
-              systemctl enable --now firewalld
+              echo "Installing iptables and configuring NAT..."
+              # Amazon Linux 2023 doesn't include iptables by default.
+              dnf install -y iptables-services
+              systemctl enable --now iptables
 
               # Find the default network interface
               IFACE=$(ip -o -4 route show to default | awk '{print $5}')
-              echo "Default interface is ${IFACE}"
+              echo "Default interface is $${IFACE}"
 
-              # Add the interface to the public zone and enable masquerading
-              firewall-cmd --permanent --zone=public --add-interface=${IFACE}
-              firewall-cmd --permanent --zone=public --add-masquerade
-              firewall-cmd --reload
-              echo "firewalld NAT configuration complete."
+              # Flush the FORWARD chain for a clean slate
+              iptables -F FORWARD
+
+              # Add the masquerading rule
+              iptables -t nat -A POSTROUTING -o "${IFACE}" -j MASQUERADE
+
+              # Save the rules to persist across reboots
+              service iptables save
+              echo "iptables NAT configuration complete."
 
               echo "Ensuring SSM agent is installed and running..."
               # Ensure SSM agent is installed & running (Amazon Linux 2023)
