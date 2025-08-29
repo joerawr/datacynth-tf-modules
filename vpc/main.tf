@@ -136,7 +136,7 @@ resource "aws_instance" "nat" {
               # Enable IP forwarding + simple NAT
               echo 1 > /proc/sys/net/ipv4/ip_forward
               IFACE=$(ip -o -4 route show to default | awk '{print $5}')
-              iptables -t nat -A POSTROUTING -o "${IFACE}" -j MASQUERADE
+              iptables -t nat -A POSTROUTING -o "$${IFACE}" -j MASQUERADE
 
               # Ensure SSM agent is installed & running (Amazon Linux 2023)
               if ! systemctl list-unit-files | grep -q amazon-ssm-agent; then
