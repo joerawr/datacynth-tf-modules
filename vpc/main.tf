@@ -131,18 +131,27 @@ resource "aws_instance" "nat" {
   depends_on             = [aws_internet_gateway.main]
   user_data              = <<-EOF
               #!/bin/bash
+              # Redirect all output to a log file for troubleshooting
+              exec > >(tee /var/log/user_data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
               set -eu
 
               # Enable IP forwarding + simple NAT
+              echo "Enabling IP forwarding..."
               echo 1 > /proc/sys/net/ipv4/ip_forward
+
+              echo "Finding default interface and setting up NAT..."
               IFACE=$(ip -o -4 route show to default | awk '{print $5}')
               iptables -t nat -A POSTROUTING -o "$${IFACE}" -j MASQUERADE
 
+              echo "Ensuring SSM agent is installed and running..."
               # Ensure SSM agent is installed & running (Amazon Linux 2023)
               if ! systemctl list-unit-files | grep -q amazon-ssm-agent; then
+                echo "SSM agent not found, attempting installation..."
                 dnf install -y amazon-ssm-agent || yum install -y amazon-ssm-agent || true
               fi
               systemctl enable --now amazon-ssm-agent || true
+              echo "SSM agent setup complete."
               EOF
   tags = {
     Name = "${var.name}-nat-instance"
